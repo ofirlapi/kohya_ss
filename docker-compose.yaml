@@ -1,38 +1,57 @@
 services:
   kohya-ss-gui:
     container_name: kohya-ss-gui
-    image: ghcr.io/bmaltais/kohya-ss-gui:latest
-    user: 1000:0
     build:
       context: .
       args:
         - UID=1000
+        - TORCH_VERSION=2.5.0+cu124
+        - PYTHON_VERSION=3.10
+        - KOHYA_BRANCH=sd3-flux.1
       cache_from:
         - ghcr.io/bmaltais/kohya-ss-gui:cache
       cache_to:
         - type=inline
+    user: 1000:0
     ports:
       - 7860:7860
     environment:
       SAFETENSORS_FAST_GPU: 1
       TENSORBOARD_PORT: ${TENSORBOARD_PORT:-6006}
+      CUDA_MODULE_LOADING: LAZY
+      TORCH_CUDA_ARCH_LIST: "7.0 7.5 8.0 8.6 8.9 9.0+PTX"
+      HF: ${HF_TOKEN:-""}  # הוסף את הטוקן שלך ב-.env
     tmpfs:
       - /tmp
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ./models:/app/models
+      - ./models:/workspace/kohya_ss/models
       - ./dataset:/dataset
-      - ./dataset/images:/app/data
-      - ./dataset/logs:/app/logs
-      - ./dataset/outputs:/app/outputs
-      - ./dataset/regularization:/app/regularization
-      - ./models:/app/models
-      - ./.cache/config:/app/config
+      - ./dataset/images:/workspace/kohya_ss/data
+      - ./dataset/logs:/workspace/kohya_ss/logs
+      - ./dataset/outputs:/workspace/kohya_ss/outputs
+      - ./dataset/regularization:/workspace/kohya_ss/regularization
+      - ./.cache/config:/workspace/kohya_ss/config
       - ./.cache/user:/home/1000/.cache
       - ./.cache/triton:/home/1000/.triton
       - ./.cache/nv:/home/1000/.nv
       - ./.cache/keras:/home/1000/.keras
-      - ./.cache/config:/home/1000/.config # For backward compatibility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu, compute, utility]
+              device_ids: ["all"]
+              
+  tensorboard:
+    container_name: tensorboard
+    image: tensorflow/tensorflow:2.15.0-gpu
+    ports:
+      - ${TENSORBOARD_PORT:-6006}:6006
+    volumes:
+      - ./dataset/logs:/logs
+    command: tensorboard --logdir=/logs --bind_all
     deploy:
       resources:
         reservations:
@@ -41,19 +60,6 @@ services:
               capabilities: [gpu]
               device_ids: ["all"]
 
-  tensorboard:
-    container_name: tensorboard
-    image: tensorflow/tensorflow:latest-gpu
-    ports:
-      # !Please change the port in .env file
-      - ${TENSORBOARD_PORT:-6006}:6006
-    volumes:
-      - ./dataset/logs:/app/logs
-    command: tensorboard --logdir=/app/logs --bind_all
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
-              device_ids: ["all"]
+networks:
+  default:
+    driver: bridge
